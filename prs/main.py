@@ -1,6 +1,7 @@
 import asyncio
-import base64
+import hashlib
 import enum
+import json
 
 import pydantic
 import pydantic_settings
@@ -8,7 +9,7 @@ import uvicorn
 
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header
 from starlette.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
@@ -24,13 +25,13 @@ class HashingSettings(pydantic_settings.BaseSettings):
 
 
 class PlayerTokenizer:
-    def __init__(self, settings: HashingSettings | None = None):
-        self._settings = settings or HashingSettings()
+    def __init__(self):
+        self._settings = HashingSettings()
 
     def generate_token(self, player: Player) -> str:
         salted_player_id = str(player.id) + self._settings.salt
 
-        return base64.b64encode(salted_player_id.encode()).decode()
+        return hashlib.sha256(salted_player_id.encode()).hexdigest()
 
 
 player_tokenizer = PlayerTokenizer()
@@ -77,6 +78,22 @@ class RoomsManager: # отвечает за связь комнаты с инт�
         return [self.players_and_websocket[player.id] for player in room.players]
 
 
+class PlayerManager:
+    def __init__(self):
+        self._tokenizer = PlayerTokenizer()
+        self.hash_with_player: [str, Player] = {}
+
+    def register_player(self, player: Player) -> str:
+        player_hash = self._tokenizer.generate_token(player)
+        self.hash_with_player[player_hash] = player
+
+        return player_hash
+
+    def get_player(self, player_hash: str) -> Player | None:
+        return self.hash_with_player.get(player_hash, None)
+
+
+player_manager = PlayerManager()
 room_manager = RoomsManager()  #создание обькта класса идет со скобками
 
 
@@ -105,7 +122,7 @@ async def send_room_event_message(websocket: WebSocket, room: Room, event: RoomE
 
 
 @app.websocket("/start/{room_id}")
-async def websocket_connect_room(websocket: WebSocket, room_id: UUID, name: str):
+async def websocket_connect_room(websocket: WebSocket, room_id: UUID, name: str, player_hash: str | None = None):
     await manager.connect(websocket)
 
     try:
@@ -116,11 +133,26 @@ async def websocket_connect_room(websocket: WebSocket, room_id: UUID, name: str)
 
         other_players_websocket = room_manager.get_websockets_for_room(room)
 
-        player = Player(name=name)
-        room.add_player(player)
-        room_manager.register_player(player, websocket)
+        if player_hash:
+            player = player_manager.get_player(player_hash)
 
-        await send_room_event_message(websocket, room, RoomEvent.ConnectedToRoom)
+            if not player:
+                player = Player(name=name)
+                room.add_player(player)
+                player_hash = player_manager.register_player(player)
+                room_manager.register_player(player, websocket)
+
+        else:
+            player = Player(name=name)
+            room.add_player(player)
+            player_hash = player_manager.register_player(player)
+            room_manager.register_player(player, websocket)
+
+        await websocket.send_text(json.dumps({
+            "event": RoomEvent.ConnectedToRoom.value,
+            "room": room.model_dump(mode="json"),
+            "hash": player_hash,
+        }))
 
         for other_player_websocket in other_players_websocket:
             await send_room_event_message(other_player_websocket, room, RoomEvent.NewPlayerConnected)
