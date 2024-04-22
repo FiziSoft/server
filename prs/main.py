@@ -117,10 +117,6 @@ class RoomEventMessage(pydantic.BaseModel):
     room: Room
 
 
-async def send_room_event_message(websocket: WebSocket, room: Room, event: RoomEvent) -> None:
-    await websocket.send_text(RoomEventMessage(event=event, room=room).model_dump_json())
-
-
 @app.websocket("/start/{room_id}")
 async def websocket_connect_room(websocket: WebSocket, room_id: UUID, name: str, player_hash: str | None = None):
     await manager.connect(websocket)
@@ -148,6 +144,7 @@ async def websocket_connect_room(websocket: WebSocket, room_id: UUID, name: str,
             player_hash = player_manager.register_player(player)
             room_manager.register_player(player, websocket)
 
+        #  ПРИМЕР Отправка сообщения на клиент
         await websocket.send_text(json.dumps({
             "event": RoomEvent.ConnectedToRoom.value,
             "room": room.model_dump(mode="json"),
@@ -155,20 +152,31 @@ async def websocket_connect_room(websocket: WebSocket, room_id: UUID, name: str,
         }))
 
         for other_player_websocket in other_players_websocket:
-            await send_room_event_message(other_player_websocket, room, RoomEvent.NewPlayerConnected)
+            #  ПРИМЕР Отправка сообщения на клиент
+            await other_player_websocket.send_text(json.dumps({
+                "event": RoomEvent.NewPlayerConnected.value,
+                "room": room.model_dump(mode="json"),
+            }))
 
         while True:
             if room.can_start:  # когда подключилось заданое количество игроков
+                # TODO: Отправка сообщения на клиент
                 await manager.send_personal_message("Game can be started", websocket)
+
                 if room.all_players_make_choice:
+                    # TODO: Отправка сообщения на клиент
                     await manager.send_personal_message("YouGetChoice", websocket) #когда все сделали ход
+
                     if player in room.winners:
                         if len(room.winners) == len(room.players):
+                            # TODO: Отправка сообщения на клиент
                             await manager.send_personal_message("Draw", websocket)
                         else:
+                            # TODO: Отправка сообщения на клиент
                             await manager.send_personal_message("You Win", websocket)
                             player.score += 1
                     else:
+                        # TODO: Отправка сообщения на клиент
                         await manager.send_personal_message("You Lose", websocket)
 
                     room.reset()
@@ -177,6 +185,7 @@ async def websocket_connect_room(websocket: WebSocket, room_id: UUID, name: str,
                 try:
                     player.choice = PlayerChoice(player_input)
                 except ValueError:
+                    # TODO: Отправка сообщения на клиент
                     await manager.send_personal_message(f"not valid choice", websocket)
             await asyncio.sleep(0.3)
             # await manager.broadcast(f"Client #{client_id} says: {data}")
