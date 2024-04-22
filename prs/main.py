@@ -1,13 +1,13 @@
 import asyncio
-import json
-from enum import Enum
-from uuid import UUID, uuid4
+import enum
 
 import pydantic
 import uvicorn
+
+from uuid import UUID, uuid4
+
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import HTMLResponse
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from prs.Entity.entity import Room, Player, PlayerChoice
@@ -51,6 +51,10 @@ class RoomsManager: # отвечает за связь комнаты с инт�
     def register_player(self, player: Player, websocket: WebSocket) -> None:
         self.players_and_websocket[player.id] = websocket
 
+    def get_websockets_for_room(self, room: Room) -> list[WebSocket]:
+        '''Возвращаем вебсокеты всех игроков, которые находятся в комнате'''
+        return [self.players_and_websocket[player.id] for player in room.players]
+
 
 room_manager = RoomsManager()  #создание обькта класса идет со скобками
 
@@ -64,6 +68,21 @@ async def create_room(name: str, req_players: int) -> Room:
 manager = ConnectionManager()
 
 
+class RoomEvent(enum.Enum):
+    ConnectedToRoom = "ConnectedToRoom"
+    NewPlayerConnected = "NewPlayerConnected"
+    PlayerDisconnected = "PlayerDisconnected"
+
+
+class RoomEventMessage(pydantic.BaseModel):
+    event: RoomEvent
+    room: Room
+
+
+async def send_room_event_message(websocket: WebSocket, room: Room, event: RoomEvent) -> None:
+    await websocket.send_text(RoomEventMessage(event=event, room=room).model_dump_json())
+
+
 @app.websocket("/start/{room_id}")
 async def websocket_connect_room(websocket: WebSocket, room_id: UUID, name: str):
     await manager.connect(websocket)
@@ -73,13 +92,19 @@ async def websocket_connect_room(websocket: WebSocket, room_id: UUID, name: str)
         if not room:
             await manager.disconnect(websocket, 1003, reason="room net")
             return
+
+        other_players_websocket = room_manager.get_websockets_for_room(room)
+
         player = Player(name=name)
         room.add_player(player)
-        send_room: None = json.dump(room)
+        room_manager.register_player(player, websocket)
+
+        await send_room_event_message(websocket, room, RoomEvent.ConnectedToRoom)
+
+        for other_player_websocket in other_players_websocket:
+            await send_room_event_message(other_player_websocket, room, RoomEvent.NewPlayerConnected)
 
         while True:
-            await manager.send_personal_message("WaitPlayers", websocket)
-
             if room.can_start:  # когда подключилось заданое количество игроков
                 await manager.send_personal_message("Game can be started", websocket)
                 if room.all_players_make_choice:
