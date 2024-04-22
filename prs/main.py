@@ -1,7 +1,9 @@
 import asyncio
+import base64
 import enum
 
 import pydantic
+import pydantic_settings
 import uvicorn
 
 from uuid import UUID, uuid4
@@ -12,7 +14,26 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from prs.Entity.entity import Room, Player, PlayerChoice
 
+
 app = FastAPI()
+
+
+class HashingSettings(pydantic_settings.BaseSettings):
+    model_config = pydantic_settings.SettingsConfigDict(env_prefix="HASHING_", case_sensitive=False)
+    salt: str
+
+
+class PlayerTokenizer:
+    def __init__(self, settings: HashingSettings | None = None):
+        self._settings = settings or HashingSettings()
+
+    def generate_token(self, player: Player) -> str:
+        salted_player_id = str(player.id) + self._settings.salt
+
+        return base64.b64encode(salted_player_id.encode()).decode()
+
+
+player_tokenizer = PlayerTokenizer()
 
 
 class ConnectionManager:
