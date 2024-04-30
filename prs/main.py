@@ -68,7 +68,7 @@ class RoomsManager: # отвечает за связь комнаты с инт�
         return current_room
 
     def get_room(self, room_id: UUID) -> Room | None:
-        return self.rooms.get(room_id, None)    #get принимает два значения 1 получает по первому если нет то что во втором параметре
+        return self.rooms.get(room_id, None)    # get принимает два значения 1 получает по первому если нет то что во втором параметре
 
     def register_player(self, player: Player, websocket: WebSocket) -> None:
         self.players_and_websocket[player.id] = websocket
@@ -110,7 +110,7 @@ class RoomEvent(enum.Enum):
     ConnectedToRoom = "ConnectedToRoom"
     NewPlayerConnected = "NewPlayerConnected"
     PlayerDisconnected = "PlayerDisconnected"
-
+    GameCanBeStart = "GameCanBeStart"
 
 class RoomEventMessage(pydantic.BaseModel):
     event: RoomEvent
@@ -122,6 +122,7 @@ async def websocket_connect_room(websocket: WebSocket, room_id: UUID, name: str,
     await manager.connect(websocket)
 
     try:
+        
         room = room_manager.get_room(room_id)
         if not room:
             await manager.disconnect(websocket, 1003, reason="room net")
@@ -151,21 +152,34 @@ async def websocket_connect_room(websocket: WebSocket, room_id: UUID, name: str,
             "hash": player_hash,
         }))
 
-        for other_player_websocket in other_players_websocket:
-            #  ПРИМЕР Отправка сообщения на клиент
-            await other_player_websocket.send_text(json.dumps({
-                "event": RoomEvent.NewPlayerConnected.value,
-                "room": room.model_dump(mode="json"),
-            }))
+        if not room.can_start:
+            for other_player_websocket in other_players_websocket:
+                #  ПРИМЕР Отправка сообщения на клиент
+                await other_player_websocket.send_text(json.dumps({
+                    "event": RoomEvent.NewPlayerConnected.value,
+                    "room": room.model_dump(mode="json"),
+                }))
 
         while True:
             if room.can_start:  # когда подключилось заданое количество игроков
+
+                all_players_websocket = room_manager.get_websockets_for_room(room)
+
                 # TODO: Отправка сообщения на клиент
-                await manager.send_personal_message("Game can be started", websocket)
+                for i in all_players_websocket:
+                    #  ПРИМЕР Отправка сообщения на клиент
+                    await i.send_text(json.dumps({
+                        "event": RoomEvent.GameCanBeStart.value,
+                        "room": room.model_dump(mode="json"),
+                        "hash": player_hash
+                    }))
+
+                # player_input = await websocket.receive_text()
+
 
                 if room.all_players_make_choice:
                     # TODO: Отправка сообщения на клиент
-                    await manager.send_personal_message("YouGetChoice", websocket) #когда все сделали ход
+                    await manager.send_personal_message("YouGetChoice", websocket) # когда все сделали ход
 
                     if player in room.winners:
                         if len(room.winners) == len(room.players):

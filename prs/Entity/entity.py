@@ -36,7 +36,7 @@ class Room(pydantic.BaseModel):
 
     @property
     def all_players_make_choice(self) -> bool:
-        return all(i.choice for i in self.players)    # делаю цикл из всех игроков єтой комнаті и смотрю что бі уних біл сделан вібор
+        return all(i.choice for i in self.players) # делаю цикл из всех игроков єтой комнаті и смотрю что бі уних біл сделан вібор
 
     @property
     def winners(self) -> list[Player]:
