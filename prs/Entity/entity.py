@@ -1,3 +1,4 @@
+import enum
 from enum import Enum
 from uuid import UUID, uuid4
 
@@ -17,8 +18,14 @@ class Player (pydantic.BaseModel):
     score: int = 0
 
 
+class RoomState(enum.Enum):
+    WaitingPlayers = "WaitingPlayers"
+    WaitingChoices = "WaitingChoices"
+
+
 class Room(pydantic.BaseModel):
-    id: UUID
+    id: UUID = pydantic.Field(default_factory=uuid4)
+    state: RoomState = RoomState.WaitingPlayers
     name: str
     players: list[Player] = pydantic.Field(default_factory=lambda: [])
     required_players: int
@@ -54,12 +61,19 @@ class Room(pydantic.BaseModel):
 
         if rock_players and paper_players and scissors_players:
             return self.players
+        else:
+            if rock_players and paper_players and not scissors_players:
+                winners = paper_players
 
-        elif rock_players and paper_players and not scissors_players:
-            return paper_players
+            elif rock_players and not paper_players and scissors_players:
+                winners = rock_players
 
-        elif rock_players and not paper_players and scissors_players:
-            return rock_players
+            elif not rock_players and paper_players and scissors_players:
+                winners = scissors_players
+            else:
+                winners = []
 
-        elif not rock_players and paper_players and scissors_players:
-            return scissors_players
+            for winner in winners:
+                winner.score += 1
+
+            return winners
