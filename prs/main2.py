@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 
 from fastapi import FastAPI, Header
 from starlette.middleware.cors import CORSMiddleware
-from starlette.websockets import WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 
 from prs.Entity.entity import Room, Player, PlayerChoice, RoomState
 from prs.manager import RoomManager
@@ -46,13 +46,15 @@ class RoomEventMessage(pydantic.BaseModel):
 
 @app.websocket("/start/{room_id}")
 async def websocket_connect_room(websocket: WebSocket, room_id: UUID, name: str, player_hash: str | None = None):
+    room = None
+    player = None
     try:
         await websocket.accept()
 
         room = manager.get_room(room_id)
 
         if not room or room.state != RoomState.WaitingPlayers:
-            await websocket.close(websocket, 1003, reason="room net")
+            await websocket.close(1003, reason="room net")
             return
 
         other_players_websocket = manager.get_room_websockets(room)
@@ -121,7 +123,14 @@ async def websocket_connect_room(websocket: WebSocket, room_id: UUID, name: str,
                 room_player.choice = None
 
     except WebSocketDisconnect:
-        await websocket.close(code=1003, reason="konec")
+        print(websocket.application_state)
+        print(websocket.client_state)
+        if websocket.application_state == WebSocketState.CONNECTED and websocket.client_state == WebSocketState.CONNECTED:
+            await websocket.close(code=1003, reason="konec")
+        if room and len(room.players) < room.required_players + 1:
+            room.state = RoomState.WaitingPlayers
+            if player:
+                manager.delete_player(player, room)
 
 
 app.add_middleware(

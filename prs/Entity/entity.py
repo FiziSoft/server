@@ -37,6 +37,10 @@ class Room(pydantic.BaseModel):
         for i in self.players:
             i.choice = None
 
+    def delete_player(self, player: Player) -> None:
+        self.players.remove(player)
+
+
     @property
     def can_start(self) -> bool:
         return len(self.players) == self.required_players
@@ -61,14 +65,15 @@ class Room(pydantic.BaseModel):
 
         if rock_players and paper_players and scissors_players:
             return self.players
+
         else:
-            if rock_players and paper_players and not scissors_players:
+            if paper_players and not scissors_players:
                 winners = paper_players
 
-            elif rock_players and not paper_players and scissors_players:
+            elif rock_players and not paper_players:
                 winners = rock_players
 
-            elif not rock_players and paper_players and scissors_players:
+            elif not rock_players and scissors_players:
                 winners = scissors_players
             else:
                 winners = []

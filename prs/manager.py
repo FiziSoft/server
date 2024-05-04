@@ -38,3 +38,11 @@ class RoomManager:
         room.add_player(player)
 
         return player_hash
+
+    def delete_player(self, player: Player, room: Room) -> None:
+        player_hash = self._tokenizer.generate_token(player)
+        self._player_websockets.pop(player.id)
+        self._hashed_players.pop(player_hash)
+        room.delete_player(player)
+
+
